@@ -8,13 +8,17 @@ const { Pool } = pkg;
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  },
-  // Production-ready pool tuning
-  max: 10,               // max concurrent connections
-  idleTimeoutMillis: 30000,  // close idle connections after 30s
-  connectionTimeoutMillis: 5000, // fail fast if can't connect in 5s
+  ssl: { rejectUnauthorized: false },
+  // Neon-compatible pool settings
+  max: 3,                       // Neon pooler works best with few connections
+  idleTimeoutMillis: 10000,     // Release idle connections in 10s (before Neon kills them)
+  connectionTimeoutMillis: 30000, // Wait up to 30s to acquire a connection
+  allowExitOnIdle: true,
+});
+
+// Handle pool-level errors (prevents unhandled crash on connection drop)
+pool.on('error', (err) => {
+  console.error('⚠️  Unexpected pool error (reconnecting on next request):', err.message);
 });
 
 // Test connection on startup
@@ -80,10 +84,7 @@ async function initDb() {
     await client.query('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_slots_class ON timetable_slots(class_id);');
     await client.query('CREATE INDEX IF NOT EXISTS idx_slots_dept ON timetable_slots(department);');
-    // Full-text search index on subject
-    await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_slots_subject ON timetable_slots USING gin(to_tsvector('english', COALESCE(subject, '')));
-    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_slots_subject ON timetable_slots(subject);');
 
     // Seed Admin
     const { rows: adminRows } = await client.query('SELECT id FROM users WHERE email = $1', ['admin@nitkkr.ac.in']);
